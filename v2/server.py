@@ -1,6 +1,6 @@
-########################################################################################################
-# The RWKV Language Model - https://github.com/BlinkDL/RWKV-LM
-########################################################################################################
+
+from flask import Flask, request, jsonify
+import argparse
 
 import os, copy, types, gc, sys
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -9,10 +9,16 @@ sys.path.append(f'{current_path}/../rwkv_pip_package/src')
 import numpy as np
 from prompt_toolkit import prompt
 try:
-    os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
+    # os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 except:
     pass
 np.set_printoptions(precision=4, suppress=True, linewidth=200)
+parser = argparse.ArgumentParser(description='Flask app with command-line arguments')
+parser.add_argument('--model_name', type=str, help='Model path')
+parser.add_argument('--strategy', type=str, help='Runtime strategy')
+
+cml_args = parser.parse_args()
 args = types.SimpleNamespace()
 
 print('\n\nChatRWKV v2 https://github.com/BlinkDL/ChatRWKV')
@@ -22,65 +28,15 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
-# Tune these below (test True/False for all of them) to find the fastest setting:
-# torch._C._jit_set_profiling_executor(True)
-# torch._C._jit_set_profiling_mode(True)
-# torch._C._jit_override_can_fuse_on_cpu(True)
-# torch._C._jit_override_can_fuse_on_gpu(True)
-# torch._C._jit_set_texpr_fuser_enabled(False)
-# torch._C._jit_set_nvfuser_enabled(False)
-
-########################################################################################################
-#
-# fp16 = good for GPU (!!! DOES NOT support CPU !!!)
-# fp32 = good for CPU
-# bf16 = less accuracy, supports some CPUs
-# xxxi8 (example: fp16i8) = xxx with int8 quantization to save 50% VRAM/RAM, slightly less accuracy
-#
-# Read https://pypi.org/project/rwkv/ for Strategy Guide
-#
-########################################################################################################
-
-# args.strategy = 'cpu fp32'
-# args.strategy = 'cpu bf16'
-args.strategy = 'cuda fp16'
-# args.strategy = 'cuda:0 fp16 -> cuda:1 fp16'
-# args.strategy = 'cuda fp16i8 *10 -> cuda fp16'
-# args.strategy = 'cuda fp16i8'
-# args.strategy = 'cuda fp16i8 -> cpu fp32 *10'
-# args.strategy = 'cuda fp16i8 *10+'
+args.strategy = cml_args.strategy
 
 os.environ["RWKV_JIT_ON"] = '1' # '1' or '0', please use torch 1.13+ and benchmark speed
 os.environ["RWKV_CUDA_ON"] = '1' # '1' to compile CUDA kernel (10x faster), requires c++ compiler & cuda libraries
 
-# CHAT_LANG = 'English' # English // Chinese // more to come
+app = Flask(__name__)
 CHAT_LANG = 'Chinese' # English // Chinese // more to come
+args.MODEL_NAME = cml_args.model_name
 
-# Download RWKV models from https://huggingface.co/BlinkDL
-# Use '/' in model path, instead of '\'
-# Use convert_model.py to convert a model for a strategy, for faster loading & saves CPU RAM 
-if CHAT_LANG == 'English':
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-raven/RWKV-4-Raven-14B-v12-Eng98%-Other2%-20230523-ctx8192'
-    args.MODEL_NAME = 'D:\Code\models\RWKV-4-Novel-3B-v1-Chn-20230412-ctx4096.pth'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-raven/RWKV-4-Raven-7B-v12-Eng98%-Other2%-20230521-ctx8192'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-14b/RWKV-4-Pile-14B-20230313-ctx8192-test1050'
-
-elif CHAT_LANG == 'Chinese': # Raven系列可以对话和 +i 问答。Novel系列是小说模型，请只用 +gen 指令续写。
-    # args.MODEL_NAME = 'D:\Code\models\RWKV-4-Novel-3B-v1-Chn-20230412-ctx4096.pth'
-    # args.MODEL_NAME = 'D:\Code\models\RWKV-4-Novel-7B-v1-Chn.pth'
-    # args.MODEL_NAME = 'D:\Code\models\RWKV-4-Pile-7B-Chn-testNovel.pth'
-    args.MODEL_NAME = '/root/models/RWKV-4-Pile-7B-Chn-testNovel.pth'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-raven/RWKV-4-Raven-7B-v12-Eng49%-Chn49%-Jpn1%-Other1%-20230530-ctx8192'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-world/RWKV-4-World-CHNtuned-3B-v1-20230625-ctx4096'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-novel/RWKV-4-Novel-7B-v1-ChnEng-20230426-ctx8192'
-
-elif CHAT_LANG == 'Japanese':
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-raven/RWKV-4-Raven-14B-v8-EngAndMore-20230408-ctx4096'
-    args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-raven/RWKV-4-Raven-7B-v10-Eng89%-Jpn10%-Other1%-20230420-ctx4096'
-
-# -1.py for [User & Bot] (Q&A) prompt
-# -2.py for [Bob & Alice] (chat) prompt
-PROMPT_FILE = f'{current_path}/prompt/default/{CHAT_LANG}-2.py'
 
 CHAT_LEN_SHORT = 40
 CHAT_LEN_LONG = 150
@@ -97,9 +53,6 @@ AVOID_REPEAT = '，：？！'
 
 CHUNK_LEN = 256 # split input into chunks to save VRAM (shorter -> slower)
 
-# args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-world/RWKV-4-World-CHNtuned-0.1B-v1-20230617-ctx4096'
-# args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-world/RWKV-4-World-CHNtuned-0.4B-v1-20230618-ctx4096'
-# args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-world/RWKV-4-World-3B-v1-20230619-ctx4096'
 
 if args.MODEL_NAME.endswith('/'): # for my own usage
     if 'rwkv-final.pth' in os.listdir(args.MODEL_NAME):
@@ -110,7 +63,6 @@ if args.MODEL_NAME.endswith('/'): # for my own usage
 
 ########################################################################################################
 
-print(f'\n{CHAT_LANG} - {args.strategy} - {PROMPT_FILE}')
 from rwkv.model import RWKV
 from rwkv.utils import PIPELINE
 
@@ -145,7 +97,6 @@ else:
 
 model_tokens = []
 model_state = None
-
 AVOID_REPEAT_TOKENS = []
 for i in AVOID_REPEAT:
     dd = pipeline.encode(i)
@@ -154,8 +105,7 @@ for i in AVOID_REPEAT:
 
 ########################################################################################################
 
-def run_rnn(tokens, newline_adj = 0):
-    global model_tokens, model_state
+def run_rnn(tokens,model_tokens, model_state, newline_adj = 0):
 
     tokens = [int(x) for x in tokens]
     model_tokens += tokens
@@ -169,10 +119,10 @@ def run_rnn(tokens, newline_adj = 0):
 
     if model_tokens[-1] in AVOID_REPEAT_TOKENS:
         out[model_tokens[-1]] = -999999999
-    return out
+    return out, model_state
 
 all_state = {}
-def save_all_stat(srv, name, last_out):
+def save_all_stat(srv, name, last_out, model_tokens, model_state):
     n = f'{name}_{srv}'
     all_state[n] = {}
     all_state[n]['out'] = last_out
@@ -197,17 +147,9 @@ def fix_tokens(tokens):
 ########################################################################################################
 
 # Run inference
-print(f'\nRun prompt...')
 
-user, bot, interface, init_prompt = load_prompt(PROMPT_FILE)
-out = run_rnn(fix_tokens(pipeline.encode(init_prompt)))
-save_all_stat('', 'chat_init', out)
-gc.collect()
+# gc.collect()
 torch.cuda.empty_cache()
-
-srv_list = ['dummy_server']
-for s in srv_list:
-    save_all_stat(s, 'chat', out)
 
 def reply_msg(msg):
     print(f'{bot}{interface} {msg}\n')
@@ -261,7 +203,7 @@ def on_message(message):
 
         if msg[:5].lower() == '+gen ':
             new = '\n' + msg[5:].strip()
-            # print(f'### prompt ###\n[{new}]')
+            print(f'### prompt ###\n[{new}]')
             model_state = None
             model_tokens = []
             out = run_rnn(pipeline.encode(new))
@@ -424,63 +366,72 @@ Below is an instruction that describes a task. Write a response that appropriate
         save_all_stat(srv, 'chat', out)
 
 ########################################################################################################
+srv = "flask_server"
 
-if CHAT_LANG == 'English':
-    HELP_MSG = '''Commands:
-say something --> chat with bot. use \\n for new line.
-+ --> alternate chat reply
-+reset --> reset chat
+class NovelModel:
+    def __init__(self) -> None:
+        self.model_tokens = []
+        self.model_state = None
+    
+    def reset(self)->None:
+        self.model_tokens = []
+        self.model_state = None
 
-+gen YOUR PROMPT --> free single-round generation with any prompt. use \\n for new line.
-+i YOUR INSTRUCT --> free single-round generation with any instruct. use \\n for new line.
-+++ --> continue last free generation (only for +gen / +i)
-++ --> retry last free generation (only for +gen / +i)
 
-Now talk with the bot and enjoy. Remember to +reset periodically to clean up the bot's memory. Use RWKV-4 14B (especially https://huggingface.co/BlinkDL/rwkv-4-raven) for best results.
-'''
-elif CHAT_LANG == 'Chinese':
-    HELP_MSG = f'''指令:
-直接输入内容 --> 和机器人聊天（建议问机器人问题），用\\n代表换行，必须用 Raven 模型
-+ --> 让机器人换个回答
-+reset --> 重置对话，请经常使用 +reset 重置机器人记忆
+@app.route('/gen', methods=['POST'])
+def gen():
+    # schema {"message": "novel paragragh"}
+    data = request.get_json()
+    message = '\n'+data['message'].strip()
+    print(message)
+    model_state = None
+    model_tokens = []
+    x_temp = GEN_TEMP
+    x_top_p = GEN_TOP_P
+    out, model_state = run_rnn(pipeline.encode(message), model_tokens, model_state)
+    save_all_stat(srv, 'gen_0', out, model_tokens, model_state)    
+    begin = len(model_tokens)
+    # print('model token:', begin)
+    out_last = begin
+    occurrence = {}
+    ret = []
+    for i in range(FREE_GEN_LEN+100):
+        for n in occurrence:
+            out[n] -= (GEN_alpha_presence + occurrence[n] * GEN_alpha_frequency)
+        token = pipeline.sample_logits(
+            out,
+            temperature=x_temp,
+            top_p=x_top_p,
+        )
+        if token == END_OF_TEXT:
+            break
+        for xxx in occurrence:
+            occurrence[xxx] *= GEN_penalty_decay
+        if token not in occurrence:
+            occurrence[token] = 1
+        else:
+            occurrence[token] += 1
 
-+i 某某指令 --> 问独立的问题（忽略聊天上下文），用\\n代表换行，必须用 Raven 模型
-+gen 某某内容 --> 续写内容（忽略聊天上下文），用\\n代表换行，写小说用 testNovel 模型
-+++ --> 继续 +gen / +i 的回答
-++ --> 换个 +gen / +i 的回答
+        out, model_state = run_rnn([token], model_tokens, model_state)
+        
+        xxx = pipeline.decode(model_tokens[out_last:])
+        if '\ufffd' not in xxx: # avoid utf-8 display issues
+            # return jsonify({'payloads': xxx}), 200
+            ret.append(xxx)
+            print(xxx, end='', flush=True)
+            out_last = begin + i + 1
+            if i >= FREE_GEN_LEN:
+                print("\nBefore break:", xxx)
+                break
+    # Return a JSON response
+    print('final output: ', ''.join(ret))
+    return jsonify({'payloads': ''.join(ret)}), 200
 
-作者：彭博 请关注我的知乎: https://zhuanlan.zhihu.com/p/603840957
-如果喜欢，请看我们的优质护眼灯: https://withablink.taobao.com
+@app.route('/')
+def hello_world():
+    print("Flask server is running")
+    return 'Flask server is working!'
 
-中文 Novel 模型，可以试这些续写例子（不适合 Raven 模型）：
-+gen “区区
-+gen 以下是不朽的科幻史诗长篇巨著，描写细腻，刻画了数百位个性鲜明的英雄和宏大的星际文明战争。\\n第一章
-+gen 这是一个修真世界，详细世界设定如下：\\n1.
-'''
-elif CHAT_LANG == 'Japanese':
-    HELP_MSG = f'''コマンド:
-直接入力 --> ボットとチャットする．改行には\\nを使用してください．
-+ --> ボットに前回のチャットの内容を変更させる．
-+reset --> 対話のリセット．メモリをリセットするために，+resetを定期的に実行してください．
-
-+i インストラクトの入力 --> チャットの文脈を無視して独立した質問を行う．改行には\\nを使用してください．
-+gen プロンプトの生成 --> チャットの文脈を無視して入力したプロンプトに続く文章を出力する．改行には\\nを使用してください．
-+++ --> +gen / +i の出力の回答を続ける．
-++ --> +gen / +i の出力の再生成を行う.
-
-ボットとの会話を楽しんでください。また、定期的に+resetして、ボットのメモリをリセットすることを忘れないようにしてください。
-'''
-
-print(HELP_MSG)
-print(f'{CHAT_LANG} - {args.MODEL_NAME} - {args.strategy}')
-
-print(f'{pipeline.decode(model_tokens)}'.replace(f'\n\n{bot}',f'\n{bot}'), end='')
-
-########################################################################################################
-print(f"Here is user: {user} and interface: {interface}")
-while True:
-    msg = prompt(f'{user}{interface} ')
-    if len(msg.strip()) > 0:
-        on_message(msg)
-    else:
-        print('Error: please say something')
+print(f'{args.MODEL_NAME} - {args.strategy}')
+if __name__=="__main__":
+    app.run(host='0.0.0.0', port=5000)

@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:\\Users\\frank\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\torch\\include",
+                "C:/Users/frank/AppData/Local/Programs/Python/Python311/Lib/site-packages/torch/include/torch/csrc/api/include",
+                "C:/Users/frank/AppData/Local/Programs/Python/Python311/Lib/site-packages/torch/include/torch/csrc/api/include/torch",
+                "C:\\Users\\frank\\AppData\\Local\\Programs\\Python\\Python311\\include\\cpython",
+                "C:/Users/frank/AppData/Local/Programs/Python/Python311/Lib/site-packages/torch/include/torch/csrc/utils",
+                "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "windowsSdkVersion": "10.0.22621.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}
