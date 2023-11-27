@@ -3,8 +3,9 @@
 2. Download model from https://huggingface.co/BlinkDL/rwkv-4-pile-7b/commit/2363c8e6791eaadf98ecf61bb7da4ccd2bc67b36
 3. docker run -it -p 5000:5000 -v {local path to this repo}:/root/RWKV -v {local path to models}:/root/models frank123111/rwkv:latest /bin/bash
    example: docker run -it -p 5000:5000 -v D:\Code\gits\RWKV:/root/RWKV -v D:\Code\models:/root/models frank123111/rwkv:latest /bin/bash
-4. In docker container run python RWKV/v2/server.py --model_name "/root/models/RWKV-4-Pile-7B-Chn-testNovel.pth" --strategy "cuda fp16"
-5. User the RWKV/v2/curl.ipynb or curl to query
+   If nvidia-smi is not working inside the docker, try to mount the driver location as well. E.g. sudo docker run --runtime=nvidia --gpus all -it -p 5000:5000 -v /media/frank/All/Code/gits/RWKV:/root/RWKV -v /media/frank/All/Code/models:/root/models -v /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu frank123111/rwkv:latest /bin/bash
+5. In docker container run python RWKV/v2/server.py --model_name "/root/models/RWKV-4-Pile-7B-Chn-testNovel.pth" --strategy "cuda fp16"
+6. User the RWKV/v2/curl.ipynb or curl to query
 
 
 
